@@ -1,8 +1,8 @@
 
-# A7DOv12 Sentience OS - Fresh Build
+# A7DOv12 Sentience OS
 # File 4: core/A7DO_Brain.py
 # Purpose: The Central Nervous System.
-# Logic: Enforces the deterministic flow of data: Growth -> Skeleton -> Muscles.
+# Logic: Enforces the deterministic flow of data matching L01_Anatomical_Manifold.
 
 import time
 
@@ -13,9 +13,9 @@ class A7DO_Brain:
     """
     def __init__(self, skeleton_manifold, muscular_manifold, maturation_engine):
         # Attach the core biological systems
-        self.skeleton = skeleton_manifold
-        self.muscles = muscular_manifold
-        self.growth = maturation_engine
+        self.skeleton = skeleton_manifold   # BiomechanicalBlueprint (L01)
+        self.muscles = muscular_manifold    # MuscularBlueprint (L02)
+        self.growth = maturation_engine     # MaturationEngine (L07)
         
         self.pulse_count = 0
         self.system_status = "INITIALIZED"
@@ -26,15 +26,14 @@ class A7DO_Brain:
         before 3D calculation, enforcing the baby-to-adult morphological shift.
         """
         # 1. Adjust Cranium (Head size shrinks relative to body as it grows)
-        cranium = self.skeleton.segments.get("CRANIUM")
+        cranium = self.skeleton.registry.get("CRANIUM")
         if cranium:
-            # Override base length to match exact Da Vinci head ratio
-            cranium.base_length_ratio = head_ratio * 0.85 
+            cranium.dimensions["length"] = head_ratio * 0.85 
             cranium.offset["y"] = head_ratio * 0.4
             
-        mandible = self.skeleton.segments.get("MANDIBLE")
+        mandible = self.skeleton.registry.get("MANDIBLE")
         if mandible:
-            mandible.base_length_ratio = head_ratio * 0.4
+            mandible.dimensions["length"] = head_ratio * 0.4
 
         # 2. Adjust Limbs (Limbs lengthen relative to body as it grows)
         limb_bones = [
@@ -44,11 +43,11 @@ class A7DO_Brain:
             ("TIBIA_FIBULA_L", 0.22), ("TIBIA_FIBULA_R", 0.22)
         ]
         
-        for bone_id, original_base_ratio in limb_bones:
-            bone = self.skeleton.segments.get(bone_id)
+        for bone_id, original_len in limb_bones:
+            bone = self.skeleton.registry.get(bone_id)
             if bone:
-                # Apply the developmental limb_scalar to the adult base ratio
-                bone.base_length_ratio = original_base_ratio * limb_ratio
+                # Apply the developmental limb_scalar to the adult base length
+                bone.dimensions["length"] = original_len * limb_ratio
 
     def execute_system_pulse(self):
         """
@@ -58,14 +57,11 @@ class A7DO_Brain:
         self.pulse_count += 1
         
         # --- STEP 1: TIME & GROWTH ---
-        # Advance the biological clock and retrieve current scaling physics
         self.growth.trigger_growth_pulse()
         growth_stats = self.growth.get_physics_state()
-        
         total_height = growth_stats["scale_x"]
         
         # --- STEP 2: PROPORTIONAL OVERRIDE ---
-        # Modify the skeletal blueprint using current Da Vinci ratios
         self._apply_da_vinci_ratios(
             head_ratio=growth_stats["head_ratio"], 
             limb_ratio=growth_stats["limb_ratio"]
@@ -73,11 +69,11 @@ class A7DO_Brain:
         
         # --- STEP 3: SKELETAL 3D CALCULATION ---
         # Resolve all center, proximal, and distal coordinates in absolute 3D space
-        self.skeleton.calculate_current_posture(total_height)
+        self.skeleton.generate_current_geometry(total_height)
         
         # --- STEP 4: MUSCULAR VECTOR CALCULATION ---
         # Snap the 640 muscles to the exact 3D proximal/distal points we just calculated
-        self.muscles.generate_current_musculature(self.skeleton.segments)
+        self.muscles.generate_current_musculature(self.skeleton.registry)
         
         # --- STEP 5: EXPORT MANIFOLD ---
         self.system_status = "SYNCHRONIZED"
@@ -85,16 +81,15 @@ class A7DO_Brain:
 
     def export_unified_state(self, growth_stats):
         """
-        Packages the absolute 3D coordinates into a strict dictionary.
-        The UI (app.py) will do NO math; it will only draw what this Brain outputs.
+        Packages the absolute 3D coordinates into a strict dictionary for the UI.
         """
         # Package Skeleton
         bone_data = {}
-        for b_id, b_node in self.skeleton.segments.items():
+        for b_id, b_node in self.skeleton.registry.items():
             bone_data[b_id] = {
-                "center": b_node.world_center,
-                "proximal": b_node.end_proximal,
-                "distal": b_node.end_distal
+                "center": b_node.pos_center,
+                "proximal": b_node.pos_proximal,
+                "distal": b_node.pos_distal
             }
             
         # Package Muscles
@@ -103,8 +98,7 @@ class A7DO_Brain:
             muscle_data[m_id] = {
                 "origin": m_node.pos_origin_3d,
                 "insertion": m_node.pos_insertion_3d,
-                "length": m_node.current_length,
-                "tension": m_node.tension
+                "length": m_node.current_length
             }
             
         return {
@@ -117,3 +111,4 @@ class A7DO_Brain:
             },
             "logs": self.growth.milestone_log
         }
+
