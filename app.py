@@ -33,7 +33,7 @@ def load_module_from_path(name, path):
 
 # The absolute paths for our new deterministic A7DOv12 structure
 FILE_MAP = {
-    "L01": "a7do_system/anatomy/L01_Skeleton.py",
+    "L01": "a7do_system/anatomy/L01_Anatomical_Manifold.py",
     "L02": "a7do_system/anatomy/L02_Muscles.py",
     "L07": "a7do_system/biology/L07_Growth.py",
     "BRAIN": "a7do_system/core/A7DO_Brain.py"
