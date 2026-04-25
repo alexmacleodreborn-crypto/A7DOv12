@@ -31,10 +31,10 @@ def load_module_from_path(name, path):
 
 # The EXACT paths mapped to your screenshots
 FILE_MAP = {
-    "L01": "a7do_system/anatomy/L01_Anatomical_Manifold.py",
-    "L02": "a7do_system/anatomy/L02_Muscular_System.py",
-    "L07": "a7do_system/biology/L07_Growth.py",
-    "BRAIN": "a7do_system/core/A7DO_Brain.py"
+    "L01": "anatomy/L01_Anatomical_Manifold.py",
+    "L02": "anatomy/L02_Muscular_System.py",
+    "L07": "biology/L07_Growth.py",
+    "BRAIN": "core/A7DO_Brain.py"
 }
 
 # --- INITIALIZATION BOOT SEQUENCE ---
