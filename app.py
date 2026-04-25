@@ -24,15 +24,17 @@ def load_module_from_path(name, path):
         st.error(f"SYSTEM FAULT: Cannot load {name} -> {e}")
         return None
 
+# The EXACT paths mapped to your screenshots
 FILE_MAP = {
-    "L01": "a7do_system/anatomy/L01_Anatomical_Manifold.py",
-    "L02": "a7do_system/anatomy/L02_Muscular_System.py",
-    "L03": "a7do_system/anatomy/L03_Articulations.py",
-    "L04": "a7do_system/anatomy/L04_Kinematics.py",
-    "L07": "a7do_system/biology/L07_Growth.py",
-    "BRAIN": "a7do_system/core/A7DO_Brain.py"
+    "L01": "anatomy/L01_Anatomical_Manifold.py",
+    "L02": "anatomy/L02_Muscular_System.py",
+    "L03": "anatomy/L03_Articulations.py",
+    "L04": "anatomy/L04_Kinematics.py",
+    "L07": "biology/L07_Growth.py",
+    "BRAIN": "core/A7DO_Brain.py"
 }
 
+# --- INITIALIZATION BOOT SEQUENCE ---
 if 'a7do_brain' not in st.session_state:
     modules = {k: load_module_from_path(k, v) for k, v in FILE_MAP.items()}
     if any(v is None for v in modules.values()):
@@ -126,5 +128,6 @@ with col2:
 
 time.sleep(0.5)
 st.rerun()
+
 
 
