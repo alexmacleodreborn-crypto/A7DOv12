@@ -1,99 +1,126 @@
 # app.py
-# A7DOv12 Sentience OS - Main Runner
-# Runs full organism loop: growth → kinematics → physics → stability
-
+import streamlit as st
+import matplotlib.pyplot as plt
+import numpy as np
 import time
 
-# --- IMPORT YOUR SYSTEM ---
-from core.A7DO_Brain import A7DO_Brain
-
-# Anatomy Layers (adjust paths if needed)
-from anatomy.L01_Skeleton import SkeletonManifold
-from anatomy.L02_Musculature import MusculatureManifold
-from anatomy.L03_Articulation import ArticulationManifold
-from anatomy.L04_Kinematics import KinematicEngine
-from anatomy.L00_Maturation import MaturationEngine
+from engine.organism import Organism
 
 
-# --- INITIALISE SYSTEM ---
+# -----------------------------
+# INIT SYSTEM (PERSISTENT)
+# -----------------------------
+if "org" not in st.session_state:
+    st.session_state.org = Organism()
 
-def build_a7do():
-    print("Initializing A7DO System...")
-
-    skeleton = SkeletonManifold()
-    muscles = MusculatureManifold()
-    joints = ArticulationManifold()
-    kinematics = KinematicEngine()
-    growth = MaturationEngine()
-
-    brain = A7DO_Brain(
-        skeleton_manifold=skeleton,
-        muscular_manifold=muscles,
-        articulation_manifold=joints,
-        kinematic_engine=kinematics,
-        maturation_engine=growth
-    )
-
-    print("A7DO Initialized Successfully\n")
-    return brain
+org = st.session_state.org
 
 
-# --- SIMPLE MOTOR PATTERNS (so it actually moves) ---
+# -----------------------------
+# UI
+# -----------------------------
+st.title("🧠 A7DO – Life Engine (2D Structure Mode)")
 
-def apply_basic_motor_pattern(brain, pulse):
-    """
-    Simple oscillating muscle inputs to test balance + kinematics
-    """
+col1, col2 = st.columns(2)
 
-    import math
+steps = col1.slider("Simulation Steps", 1, 50, 10)
+dt = col2.slider("Speed (dt)", 0.01, 0.5, 0.1)
 
-    # Arms swing
-    brain.set_muscle_tension("BICEPS_L", (math.sin(pulse * 0.1) + 1) / 2)
-    brain.set_muscle_tension("BICEPS_R", (math.cos(pulse * 0.1) + 1) / 2)
-
-    # Legs (basic alternating pattern)
-    brain.set_muscle_tension("QUADRICEPS_L", (math.sin(pulse * 0.08) + 1) / 2)
-    brain.set_muscle_tension("QUADRICEPS_R", (math.cos(pulse * 0.08) + 1) / 2)
-
-    brain.set_muscle_tension("HAMSTRINGS_L", (math.cos(pulse * 0.08) + 1) / 2)
-    brain.set_muscle_tension("HAMSTRINGS_R", (math.sin(pulse * 0.08) + 1) / 2)
-
-    # Core stabilisation
-    brain.set_muscle_tension("RECTUS_ABDOMINIS", 0.3)
+run = st.button("Run Simulation Step")
 
 
-# --- MAIN LOOP ---
-
-def run_simulation():
-    brain = build_a7do()
-
-    MAX_PULSES = 500
-    DELAY = 0.1  # seconds
-
-    print("Starting simulation...\n")
-
-    for pulse in range(MAX_PULSES):
-
-        # 1. Apply motor inputs
-        apply_basic_motor_pattern(brain, pulse)
-
-        # 2. Run full system
-        state = brain.execute_system_pulse()
-
-        # 3. Optional: access structured data
-        stability = state["physics"]["stability"]
-        com = state["physics"]["com"]
-
-        # Lightweight output (you already get detailed logs from brain)
-        print(f"[Pulse {pulse}] Stability: {stability:.3f} | CoM Y: {com['y']:.3f}")
-
-        # 4. Slow it down so you can observe
-        time.sleep(DELAY)
-
-    print("\nSimulation complete.")
+# -----------------------------
+# RUN SIMULATION
+# -----------------------------
+if run:
+    for _ in range(steps):
+        org.update(dt)
 
 
-# --- ENTRY POINT ---
+# -----------------------------
+# VITALS
+# -----------------------------
+st.subheader("Vitals")
 
-if __name__ == "__main__":
-    run_simulation()
+st.write({
+    "time": round(org.time, 2),
+    "cell_count": len(org.cells),
+})
+
+
+# -----------------------------
+# BUILD SIMPLE SKELETON
+# -----------------------------
+def build_simple_skeleton(cells):
+    positions = np.array([c.position for c in cells])
+
+    if len(positions) == 0:
+        return {}
+
+    # Spine (vertical sampling)
+    spine = []
+    y_vals = np.linspace(positions[:,1].min(), positions[:,1].max(), 12)
+
+    for y in y_vals:
+        close = positions[np.abs(positions[:,1] - y) < 0.5]
+        if len(close) > 0:
+            spine.append(close.mean(axis=0))
+
+    # Head (top cluster)
+    head = positions[positions[:,1] > positions[:,1].max() - 2]
+
+    # Arms (side clusters)
+    left_arm = positions[positions[:,0] < -1]
+    right_arm = positions[positions[:,0] > 1]
+
+    return {
+        "spine": spine,
+        "head": head,
+        "left_arm": left_arm,
+        "right_arm": right_arm
+    }
+
+
+# -----------------------------
+# 2D VISUAL
+# -----------------------------
+st.subheader("2D Body Structure")
+
+skeleton = build_simple_skeleton(org.cells)
+
+fig, ax = plt.subplots()
+
+# --- Draw Spine ---
+if "spine" in skeleton and len(skeleton["spine"]) > 0:
+    spine = skeleton["spine"]
+    xs = [p[0] for p in spine]
+    ys = [p[1] for p in spine]
+    ax.plot(xs, ys, linewidth=3)
+
+# --- Draw Head ---
+if "head" in skeleton and len(skeleton["head"]) > 0:
+    h = skeleton["head"]
+    ax.scatter(h[:,0], h[:,1], s=10)
+
+# --- Draw Arms ---
+if "left_arm" in skeleton and len(skeleton["left_arm"]) > 0:
+    la = skeleton["left_arm"]
+    ax.scatter(la[:,0], la[:,1], s=5)
+
+if "right_arm" in skeleton and len(skeleton["right_arm"]) > 0:
+    ra = skeleton["right_arm"]
+    ax.scatter(ra[:,0], ra[:,1], s=5)
+
+# --- Optional: show raw cells (faint background) ---
+show_cells = st.checkbox("Show Raw Cells", value=False)
+
+if show_cells:
+    xs = [c.position[0] for c in org.cells]
+    ys = [c.position[1] for c in org.cells]
+    ax.scatter(xs, ys, s=2, alpha=0.2)
+
+# Layout
+ax.set_xlim(-20, 20)
+ax.set_ylim(-5, 30)
+
+st.pyplot(fig)
