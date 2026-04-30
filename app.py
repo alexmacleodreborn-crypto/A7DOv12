@@ -22,7 +22,7 @@ if 'brain' not in st.session_state:
         MuscularBlueprint(),
         ArticulationBlueprint(),
         KinematicEngine(),
-        MaturationEngine(birth_scale=0.20)
+        MaturationEngine(birth_scale=0.20) # Starts at 20% scale[cite: 17]
     )
     st.session_state.pulse_history = []
     st.session_state.fall_count = 0
@@ -34,23 +34,26 @@ speed = st.sidebar.slider("Pulse Frequency (Hz)", 1, 10, 2)
 
 st.sidebar.divider()
 st.sidebar.subheader("Neural Plasticity")
-# This coefficient controls how hard the brain tries to balance
-learning_rate = st.sidebar.slider("Balance Coefficient (Learning to Stand)", 0.0, 1.0, 0.1)
+# Controls the 'learning' effort of the proprioceptive loop[cite: 18]
+learning_rate = st.sidebar.slider("Balance Coefficient", 0.0, 1.0, 0.1)
 st.session_state.brain.balance_coefficient = learning_rate
 
 st.sidebar.divider()
 st.sidebar.subheader("Manual Override")
 tension = st.sidebar.slider("Global Muscle Tension", 0.0, 1.0, 0.0)
+
+# Apply manual tension if slider is moved
 if tension > 0:
     for mid in st.session_state.brain.muscles.registry:
         st.session_state.brain.set_muscle_tension(mid, tension)
 
 # --- SYSTEM PULSE ---
 if run_sim:
+    # Execute the brain's pulse (Growth -> Physics -> Learning -> Kinematics)[cite: 18]
     state = st.session_state.brain.execute_system_pulse()
     st.session_state.pulse_history.append(state['physics']['stability'])
     
-    # Logic for a "Fall Event"
+    # Track falls (Stability under 0.3)
     if state['physics']['stability'] < 0.3:
         st.session_state.fall_count += 1
         
@@ -60,10 +63,14 @@ if run_sim:
     time.sleep(1/speed)
     st.rerun()
 else:
+    # STATIC VIEW: Prevents the export_unified_state parameter error[cite: 18]
     growth_stats = st.session_state.brain.growth.get_physics_state()
-    # Export current static state
     state = st.session_state.brain.export_unified_state(
-        growth_stats, np.zeros(3), {"area": 0.0}, 1.0, 1.0
+        growth_stats, 
+        np.zeros(3),        # com: Center of Mass[cite: 18]
+        {"area": 0.0},      # bos: Base of Support[cite: 18]
+        1.0,                # stability[cite: 18]
+        1.0                 # avg_stability[cite: 18]
     )
 
 # --- MAIN LAYOUT ---
@@ -73,7 +80,7 @@ with col1:
     st.subheader("3D Chassis & Physics Projection")
     fig = go.Figure()
 
-    # Draw Skeleton (Bones)[cite: 18]
+    # Draw Skeleton (Bones)
     for bid, b in state['physics']['skeleton'].items():
         fig.add_trace(go.Scatter3d(
             x=[b['proximal']['x'], b['distal']['x']],
@@ -84,10 +91,9 @@ with col1:
             name=f"Bone: {bid}"
         ))
 
-    # Draw Muscles (Color-coded by Neural Effort/Tension)[cite: 18]
+    # Draw Muscles (Dashed lines, color-coded by active tension)
     for mid, m in state['physics']['muscles'].items():
         t = m['tension']
-        # Muscles turn red as they tighten to maintain balance
         fig.add_trace(go.Scatter3d(
             x=[m['origin']['x'], m['insertion']['x']],
             y=[m['origin']['y'], m['insertion']['y']],
@@ -123,41 +129,41 @@ with col2:
     
     # Growth Indicators[cite: 17]
     st.metric("Lifecycle Stage", g['stage'])
-    st.write(f"**Physical Height Scale:** {g['scale_x']:.2%}")
+    st.write(f"**Height Scalar:** {g['scale_x']:.2%}")
     st.progress(g['scale_x'])
     
     st.divider()
     
-    # Physics & Stability[cite: 18]
+    # Stability Telemetry[cite: 18]
     p = state['physics']
-    st.metric("Stability (Standing)", f"{p['stability']:.2f}", 
+    st.metric("Stability Score", f"{p['stability']:.2f}", 
               delta=f"{p['stability']-p['avg_stability']:.3f}")
     
     if p['stability'] < 0.4:
-        st.error("⚠️ CRITICAL INSTABILITY: Falling Risk")
+        st.error("⚠️ UNSTABLE: Falling")
     elif p['stability'] < 0.65:
-        st.warning("⚖️ WOBBLING: Learning in progress")
+        st.warning("⚖️ WOBBLING: Learning...")
     else:
-        st.success("✅ BALANCED: Neural lock engaged")
+        st.success("✅ STABLE: Balanced")
 
-    st.write(f"**Cumulative Falls:** {st.session_state.fall_count}")
+    st.write(f"**Cumulative Fall Events:** {st.session_state.fall_count}")
 
-    # Organ Development[cite: 17]
-    with st.expander("Internal Organ Volumetric Scaling", expanded=True):
+    # Organ Development Scaling[cite: 17]
+    with st.expander("Organ Capacity (Allometric)", expanded=True):
         for name, data in g['organs'].items():
-            st.write(f"{name} Development")
+            st.write(f"{name} Growth")
             st.progress(data['capacity'])
-            st.caption(f"Functional Efficiency: {data['efficiency']:.0%}")
+            st.caption(f"Efficiency: {data['efficiency']:.0%}")
     
-    # Stability Trend
-    st.subheader("Balance Calibration History")
+    # Stability Chart
+    st.subheader("Balance History")
     if st.session_state.pulse_history:
         st.line_chart(st.session_state.pulse_history)
 
-    # Physics Metadata[cite: 18]
-    st.subheader("Physics State")
+    # Detailed Physics Metadata
+    st.subheader("Physics Metadata")
     st.json({
         "Total Mass": f"{sum(b['mass'] for b in p['skeleton'].values()):.2f} kg",
-        "CoM Coords": p['com'],
+        "CoM Location": p['com'],
         "BoS Area": p['bos']['area']
     })
