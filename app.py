@@ -13,7 +13,7 @@ from core.A7DO_Brain import A7DO_Brain
 
 # --- DASHBOARD CONFIG ---
 st.set_page_config(page_title="A7DOv12 Sentience OS", layout="wide")
-st.title("🧬 A7DOv12 Biomechanical & Organic Monitor")
+st.title("🧬 A7DOv12 Biomechanical & Proprioceptive Monitor")
 
 # Initialize Session State
 if 'brain' not in st.session_state:
@@ -25,38 +25,55 @@ if 'brain' not in st.session_state:
         MaturationEngine(birth_scale=0.20)
     )
     st.session_state.pulse_history = []
+    st.session_state.fall_count = 0
 
-# --- SIDEBAR ---
-st.sidebar.header("Control Panel")
-run_sim = st.sidebar.toggle("Start Biological Growth", value=False)
+# --- SIDEBAR CONTROLS ---
+st.sidebar.header("Biological & Neural Controls")
+run_sim = st.sidebar.toggle("Start Biological Clock", value=False)
 speed = st.sidebar.slider("Pulse Frequency (Hz)", 1, 10, 2)
-tension = st.sidebar.slider("Muscle Tension (Global)", 0.0, 1.0, 0.0)
 
-# Apply global tension to all muscles
-for mid in st.session_state.brain.muscles.registry:
-    st.session_state.brain.set_muscle_tension(mid, tension)
+st.sidebar.divider()
+st.sidebar.subheader("Neural Plasticity")
+# This coefficient controls how hard the brain tries to balance
+learning_rate = st.sidebar.slider("Balance Coefficient (Learning to Stand)", 0.0, 1.0, 0.1)
+st.session_state.brain.balance_coefficient = learning_rate
+
+st.sidebar.divider()
+st.sidebar.subheader("Manual Override")
+tension = st.sidebar.slider("Global Muscle Tension", 0.0, 1.0, 0.0)
+if tension > 0:
+    for mid in st.session_state.brain.muscles.registry:
+        st.session_state.brain.set_muscle_tension(mid, tension)
 
 # --- SYSTEM PULSE ---
 if run_sim:
     state = st.session_state.brain.execute_system_pulse()
     st.session_state.pulse_history.append(state['physics']['stability'])
+    
+    # Logic for a "Fall Event"
+    if state['physics']['stability'] < 0.3:
+        st.session_state.fall_count += 1
+        
     if len(st.session_state.pulse_history) > 50:
         st.session_state.pulse_history.pop(0)
+    
     time.sleep(1/speed)
     st.rerun()
 else:
-    # Static view if paused
     growth_stats = st.session_state.brain.growth.get_physics_state()
-    state = st.session_state.brain.export_unified_state(growth_stats, np.zeros(3), {"area": 0.0}, 1.0, 1.0)
+    # Export current static state
+    state = st.session_state.brain.export_unified_state(
+        growth_stats, np.zeros(3), {"area": 0.0}, 1.0, 1.0
+    )
 
-# --- LAYOUT ---
+# --- MAIN LAYOUT ---
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.subheader("3D Chassis & Organic Mapping")
+    st.subheader("3D Chassis & Physics Projection")
     fig = go.Figure()
 
-    # Draw Skeleton (Bones)
+    # Draw Skeleton (Bones)[cite: 18]
     for bid, b in state['physics']['skeleton'].items():
         fig.add_trace(go.Scatter3d(
             x=[b['proximal']['x'], b['distal']['x']],
@@ -67,58 +84,80 @@ with col1:
             name=f"Bone: {bid}"
         ))
 
-    # Draw Muscles (Color-coded by tension)
+    # Draw Muscles (Color-coded by Neural Effort/Tension)[cite: 18]
     for mid, m in state['physics']['muscles'].items():
         t = m['tension']
+        # Muscles turn red as they tighten to maintain balance
         fig.add_trace(go.Scatter3d(
             x=[m['origin']['x'], m['insertion']['x']],
             y=[m['origin']['y'], m['insertion']['y']],
             z=[m['origin']['z'], m['insertion']['z']],
             mode='lines',
-            line=dict(color=f'rgb({int(255*t)}, {int(150*(1-t))}, 200)', width=4),
+            line=dict(color=f'rgb({int(255*t)}, {int(150*(1-t))}, 200)', width=4, dash='dot'),
             name=f"Muscle: {mid}"
         ))
 
-    # Center of Mass
+    # Plot Center of Mass (CoM)[cite: 18]
     com = state['physics']['com']
     fig.add_trace(go.Scatter3d(
         x=[com['x']], y=[com['y']], z=[com['z']],
-        mode='markers', marker=dict(color='yellow', size=8, symbol='diamond'),
+        mode='markers', marker=dict(color='yellow', size=10, symbol='diamond'),
         name="CoM"
     ))
 
-    fig.update_layout(height=700, margin=dict(l=0,r=0,b=0,t=0), scene=dict(aspectmode='data'))
+    fig.update_layout(
+        height=750, 
+        margin=dict(l=0,r=0,b=0,t=0), 
+        scene=dict(
+            aspectmode='data',
+            xaxis=dict(range=[-0.5, 0.5]),
+            yaxis=dict(range=[0, 2.0]),
+            zaxis=dict(range=[-0.5, 0.5])
+        )
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    st.subheader("Maturation Telemetry")
+    st.subheader("Maturation & Proprioception")
     g = state['growth']
     
-    # Growth Indicators
+    # Growth Indicators[cite: 17]
     st.metric("Lifecycle Stage", g['stage'])
-    st.write(f"**Height Scalar:** {g['scale_x']:.2f}")
+    st.write(f"**Physical Height Scale:** {g['scale_x']:.2%}")
     st.progress(g['scale_x'])
     
     st.divider()
     
-    # Physics & Stability
+    # Physics & Stability[cite: 18]
     p = state['physics']
-    st.metric("Balance Stability", f"{p['stability']:.2f}", delta=f"{p['stability']-p['avg_stability']:.3f}")
+    st.metric("Stability (Standing)", f"{p['stability']:.2f}", 
+              delta=f"{p['stability']-p['avg_stability']:.3f}")
     
     if p['stability'] < 0.4:
-        st.error("⚠️ HIGH FALL RISK: Chassis Unstable")
-    
-    # Growth-Based Organ System Scaling
-    st.subheader("Organ Development")
-    # Allometric scaling for internal volume
-    heart_scale = g['scale_x'] ** 2.5 # Slightly faster than linear
-    lung_scale = g['scale_x'] ** 3.0  # Volumetric scaling (Square-Cube)
-    
-    st.write("Heart Volume")
-    st.progress(min(heart_scale, 1.0))
-    st.write("Lung Capacity")
-    st.progress(min(lung_scale, 1.0))
+        st.error("⚠️ CRITICAL INSTABILITY: Falling Risk")
+    elif p['stability'] < 0.65:
+        st.warning("⚖️ WOBBLING: Learning in progress")
+    else:
+        st.success("✅ BALANCED: Neural lock engaged")
+
+    st.write(f"**Cumulative Falls:** {st.session_state.fall_count}")
+
+    # Organ Development[cite: 17]
+    with st.expander("Internal Organ Volumetric Scaling", expanded=True):
+        for name, data in g['organs'].items():
+            st.write(f"{name} Development")
+            st.progress(data['capacity'])
+            st.caption(f"Functional Efficiency: {data['efficiency']:.0%}")
     
     # Stability Trend
+    st.subheader("Balance Calibration History")
     if st.session_state.pulse_history:
         st.line_chart(st.session_state.pulse_history)
+
+    # Physics Metadata[cite: 18]
+    st.subheader("Physics State")
+    st.json({
+        "Total Mass": f"{sum(b['mass'] for b in p['skeleton'].values()):.2f} kg",
+        "CoM Coords": p['com'],
+        "BoS Area": p['bos']['area']
+    })
