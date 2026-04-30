@@ -21,28 +21,27 @@ class A7DO_Brain:
     def execute_system_pulse(self):
         self.pulse_count += 1
         
-        # 1. Growth
+        # 1. Biological Growth: Advance maturation and retrieve new proportions
         self.growth.trigger_growth_pulse()
         growth_stats = self.growth.get_physics_state()
         
-        # 2. Apply proportions from growth
+        # 2. Proportion Update: Shift Da Vinci ratios (e.g., Head size)
         self._apply_da_vinci_ratios(growth_stats["head_ratio"], growth_stats["limb_ratio"])
         
-        # 3. Kinematics: Muscle tension → bone rotation
+        # 3. Kinematics: Map muscle tension to bone rotations[cite: 18]
         self.kinematics.apply_kinematics(self.muscles.registry, self.skeleton.registry)
         
-        # 4. Update skeleton geometry
+        # 4. Mechanical Geometry: Update skeleton based on growth scale[cite: 18]
         self.skeleton.generate_current_geometry(growth_stats["scale_x"])
         
-        # 5. Update joints
+        # 5. Joint & Muscle Realignment: Sync points with new chassis size[cite: 18]
         self.joints.generate_current_joints(self.skeleton.registry)
-        
-        # 6. Update muscle vectors
         self.muscles.generate_current_musculature(self.skeleton.registry)
         
-        # 7. Physics: Mass, Gravity, CoM, Stability
+        # 6. Physics: Apply mass based on Cube Law (Scale^3)[cite: 18]
         apply_gravity_and_mass(self.skeleton.registry, growth_stats["scale_x"])
         
+        # 7. Stability: Calculate Center of Mass (CoM) and Base of Support (BoS)[cite: 18]
         com = calculate_com(self.skeleton.registry)
         bos = calculate_base_of_support(self.skeleton.registry)
         stability = calculate_stability(com, bos)
@@ -53,25 +52,16 @@ class A7DO_Brain:
         
         avg_stability = round(sum(self.stability_history) / len(self.stability_history), 4)
 
-        # Detailed Console Log
-        print(f"\n=== A7DO Pulse {self.pulse_count} | Stage: {growth_stats['stage']} ===")
-        print(f"Height Scale: {growth_stats['scale_x']:.3f} | Mass: {sum(b.mass for b in self.skeleton.registry.values()):.1f} kg")
-        print(f"CoM: ({com[0]:.4f}, {com[1]:.4f}, {com[2]:.4f})")
-        print(f"BoS Area: {bos['area']:.4f} | Stability: {stability:.3f} (Avg: {avg_stability:.3f})")
-        
-        if stability < 0.4:
-            print("*** HIGH FALL RISK - Agent is unstable! ***")
-        elif stability < 0.65:
-            print("Wobbly stance - Balance is challenged")
-
         return self.export_unified_state(growth_stats, com, bos, stability, avg_stability)
 
     def _apply_da_vinci_ratios(self, head_ratio, limb_ratio):
-        # Simple proportion adjustment
+        """Silently adjusts anatomical dimensions based on maturation stage[cite: 18]."""
         if "CRANIUM" in self.skeleton.registry:
+            # Adjust cranium length using the dynamic head ratio
             self.skeleton.registry["CRANIUM"].dimensions["length"] = 0.12 * head_ratio
 
     def export_unified_state(self, growth_stats, com, bos, stability, avg_stability):
+        """Packages all telemetry for the dashboard[cite: 18]."""
         bone_data = {bid: {
             "center": b.pos_center,
             "proximal": b.pos_proximal,
@@ -89,7 +79,7 @@ class A7DO_Brain:
 
         return {
             "status": "PHYSICS_ACTIVE",
-            "growth": growth_stats,
+            "growth": growth_stats, # Includes organ states
             "physics": {
                 "skeleton": bone_data,
                 "muscles": muscle_data,
