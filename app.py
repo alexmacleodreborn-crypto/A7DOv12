@@ -1,122 +1,137 @@
-# app.py
 import streamlit as st
-import matplotlib.pyplot as plt
-import numpy as np
+import plotly.graph_objects as go
+import pandas as pd
+import time
 
-from engine.organism import Organism
-from anatomy.L01_Skeleton import SkeletonManifold
+# Importing your modules (ensure your folder structure allows these imports)
+from anatomy.L01_Anatomical_Manifold import BiomechanicalBlueprint
+from anatomy.L02_Muscular_System import MuscularBlueprint
+from anatomy.L03_Articulations import ArticulationBlueprint
+from anatomy.L04_Kinematics import KinematicEngine
+from biology.L07_Growth import MaturationEngine
+from core.A7DO_Brain import A7DO_Brain
 
+# --- DASHBOARD CONFIG ---
+st.set_page_config(page_title="A7DOv12 Sentience OS Monitor", layout="wide")
+st.title("🧬 A7DOv12 Biomechanical Dashboard")
 
-# -----------------------------
-# INIT SYSTEM
-# -----------------------------
-if "org" not in st.session_state:
-    st.session_state.org = Organism()
+# Initialize State in Streamlit Session
+if 'brain' not in st.session_state:
+    st.session_state.brain = A7DO_Brain(
+        BiomechanicalBlueprint(),
+        MuscularBlueprint(),
+        ArticulationBlueprint(),
+        KinematicEngine(),
+        MaturationEngine()
+    )
+    st.session_state.pulse_history = []
 
-if "skeleton" not in st.session_state:
-    st.session_state.skeleton = SkeletonManifold()
+# --- SIDEBAR CONTROLS ---
+st.sidebar.header("System Controls")
+run_sim = st.sidebar.toggle("Pulse System (Live)", value=False)
+speed = st.sidebar.slider("Sim Speed (Hz)", 1, 10, 2)
+tension_slider = st.sidebar.slider("Global Muscle Tension", 0.0, 1.0, 0.0)
 
-org = st.session_state.org
-skeleton = st.session_state.skeleton
+# Apply manual tension to all muscles for testing
+for mid in st.session_state.brain.muscles.registry:
+    st.session_state.brain.set_muscle_tension(mid, tension_slider)
 
+# --- SYSTEM PULSE ---
+if run_sim:
+    state = st.session_state.brain.execute_system_pulse()
+    st.session_state.pulse_history.append(state['physics']['stability'])
+    if len(st.session_state.pulse_history) > 50:
+        st.session_state.pulse_history.pop(0)
+    time.sleep(1/speed)
+    st.rerun()
+else:
+    # Get current state without advancing growth if paused
+    growth_stats = st.session_state.brain.growth.get_physics_state()
+    st.session_state.brain.skeleton.generate_current_geometry(growth_stats["scale_x"])
+    st.session_state.brain.muscles.generate_current_musculature(st.session_state.brain.skeleton.registry)
+    # Dummy stability for initial load
+    state = st.session_state.brain.export_unified_state(growth_stats, [0,0,0], {"area":0}, 1.0, 1.0)
 
-# -----------------------------
-# UI
-# -----------------------------
-st.title("🧠 A7DO – Cell → Skeleton Bridge")
+# --- UI LAYOUT ---
+col1, col2 = st.columns([2, 1])
 
-col1, col2 = st.columns(2)
+with col1:
+    st.subheader("3D Anatomical View")
+    
+    fig = go.Figure()
 
-steps = col1.slider("Steps", 1, 50, 10)
-dt = col2.slider("dt", 0.01, 0.5, 0.1)
+    # 1. Plot Bones (Skeleton)
+    for bid, b_data in state['physics']['skeleton'].items():
+        prox = b_data['proximal']
+        dist = b_data['distal']
+        fig.add_trace(go.Scatter3d(
+            x=[prox['x'], dist['x']], y=[prox['y'], dist['y']], z=[prox['z'], dist['z']],
+            mode='lines+markers',
+            line=dict(color='lightgray', width=8),
+            name=f"Bone: {bid}",
+            hoverinfo='text',
+            text=f"{bid} | Mass: {b_data['mass']:.2f}kg"
+        ))
 
-run = st.button("Run")
+    # 2. Plot Muscles
+    for mid, m_data in state['physics']['muscles'].items():
+        # Change color based on tension
+        t_val = m_data['tension']
+        m_color = f'rgb({int(255*t_val)}, {int(100*(1-t_val))}, 100)'
+        
+        fig.add_trace(go.Scatter3d(
+            x=[m_data['origin']['x'], m_data['insertion']['x']],
+            y=[m_data['origin']['y'], m_data['insertion']['y']],
+            z=[m_data['origin']['z'], m_data['insertion']['z']],
+            mode='lines',
+            line=dict(color=m_color, width=4, dash='dot'),
+            name=f"Muscle: {mid}"
+        ))
 
+    # 3. Plot Center of Mass (CoM)
+    com = state['physics']['com']
+    fig.add_trace(go.Scatter3d(
+        x=[com['x']], y=[com['y']], z=[com['z']],
+        mode='markers',
+        marker=dict(color='yellow', size=10, symbol='diamond'),
+        name="Center of Mass"
+    ))
 
-# -----------------------------
-# RUN SIMULATION
-# -----------------------------
-if run:
-    for _ in range(steps):
-        org.update(dt)
+    fig.update_layout(
+        scene=dict(aspectmode='data', xaxis_title="X", yaxis_title="Y", zaxis_title="Z"),
+        margin=dict(l=0, r=0, b=0, t=0),
+        height=700
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
+with col2:
+    st.subheader("Biometric Telemetry")
+    
+    # Growth Metrics
+    g = state['growth']
+    st.metric("Maturation Stage", g['stage'])
+    st.progress(g['scale_x'], text=f"Height Scale: {g['scale_x']:.2f}")
+    
+    # Physics Metrics
+    p = state['physics']
+    st.metric("Stability Score", f"{p['stability']:.2f}", 
+              delta=f"{p['stability'] - p['avg_stability']:.3f}")
+    
+    if p['stability'] < 0.4:
+        st.error("⚠️ CRITICAL UNSTABLE STATE")
+    elif p['stability'] < 0.65:
+        st.warning("⚖️ BALANCE CHALLENGED")
+    else:
+        st.success("✅ STABLE STANCE")
 
-# -----------------------------
-# VITALS
-# -----------------------------
-st.write({
-    "time": round(org.time, 2),
-    "cells": len(org.cells),
-})
+    # Stability Trend
+    if st.session_state.pulse_history:
+        st.line_chart(st.session_state.pulse_history)
 
-
-# -----------------------------
-# BUILD CONTROL SIGNALS
-# -----------------------------
-def extract_body_signals(cells):
-    positions = np.array([c.position for c in cells])
-
-    if len(positions) == 0:
-        return None
-
-    signals = {}
-
-    signals["height"] = positions[:,1].max()
-    signals["center_x"] = positions[:,0].mean()
-
-    # detect spread (for arms)
-    signals["width"] = positions[:,0].std()
-
-    return signals
-
-
-signals = extract_body_signals(org.cells)
-
-
-# -----------------------------
-# DRIVE L01 SKELETON
-# -----------------------------
-def update_skeleton_from_cells(skeleton, signals):
-    if not signals:
-        return
-
-    scale = max(0.5, min(2.0, signals["height"] / 10))
-
-    # update geometry scale
-    skeleton.generate_current_geometry(scale)
-
-
-update_skeleton_from_cells(skeleton, signals)
-
-
-# -----------------------------
-# DRAW REAL SKELETON (2D)
-# -----------------------------
-st.subheader("L01 Skeleton (Driven by Cells)")
-
-fig, ax = plt.subplots()
-
-for bone_id, bone in skeleton.registry.items():
-    p1 = bone.pos_proximal
-    p2 = bone.pos_distal
-
-    if p1 is None or p2 is None:
-        continue
-
-    xs = [p1[0], p2[0]]
-    ys = [p1[1], p2[1]]
-
-    ax.plot(xs, ys, linewidth=2)
-
-
-# Optional: overlay cells
-if st.checkbox("Show Cells", False):
-    xs = [c.position[0] for c in org.cells]
-    ys = [c.position[1] for c in org.cells]
-    ax.scatter(xs, ys, s=2, alpha=0.2)
-
-
-ax.set_xlim(-20, 20)
-ax.set_ylim(-5, 30)
-
-st.pyplot(fig)
+    # Technical Details
+    with st.expander("System Internals"):
+        st.json({
+            "Mass (Total)": f"{sum(b['mass'] for b in state['physics']['skeleton'].values()):.2f} kg",
+            "BoS Area": p['bos']['area'],
+            "Growth Factors": g
+        })
