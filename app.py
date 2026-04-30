@@ -2,31 +2,35 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
-import time
 
 from engine.organism import Organism
+from anatomy.L01_Skeleton import SkeletonManifold
 
 
 # -----------------------------
-# INIT SYSTEM (PERSISTENT)
+# INIT SYSTEM
 # -----------------------------
 if "org" not in st.session_state:
     st.session_state.org = Organism()
 
+if "skeleton" not in st.session_state:
+    st.session_state.skeleton = SkeletonManifold()
+
 org = st.session_state.org
+skeleton = st.session_state.skeleton
 
 
 # -----------------------------
 # UI
 # -----------------------------
-st.title("🧠 A7DO – Life Engine (2D Structure Mode)")
+st.title("🧠 A7DO – Cell → Skeleton Bridge")
 
 col1, col2 = st.columns(2)
 
-steps = col1.slider("Simulation Steps", 1, 50, 10)
-dt = col2.slider("Speed (dt)", 0.01, 0.5, 0.1)
+steps = col1.slider("Steps", 1, 50, 10)
+dt = col2.slider("dt", 0.01, 0.5, 0.1)
 
-run = st.button("Run Simulation Step")
+run = st.button("Run")
 
 
 # -----------------------------
@@ -40,86 +44,78 @@ if run:
 # -----------------------------
 # VITALS
 # -----------------------------
-st.subheader("Vitals")
-
 st.write({
     "time": round(org.time, 2),
-    "cell_count": len(org.cells),
+    "cells": len(org.cells),
 })
 
 
 # -----------------------------
-# BUILD SIMPLE SKELETON
+# BUILD CONTROL SIGNALS
 # -----------------------------
-def build_simple_skeleton(cells):
+def extract_body_signals(cells):
     positions = np.array([c.position for c in cells])
 
     if len(positions) == 0:
-        return {}
+        return None
 
-    # Spine (vertical sampling)
-    spine = []
-    y_vals = np.linspace(positions[:,1].min(), positions[:,1].max(), 12)
+    signals = {}
 
-    for y in y_vals:
-        close = positions[np.abs(positions[:,1] - y) < 0.5]
-        if len(close) > 0:
-            spine.append(close.mean(axis=0))
+    signals["height"] = positions[:,1].max()
+    signals["center_x"] = positions[:,0].mean()
 
-    # Head (top cluster)
-    head = positions[positions[:,1] > positions[:,1].max() - 2]
+    # detect spread (for arms)
+    signals["width"] = positions[:,0].std()
 
-    # Arms (side clusters)
-    left_arm = positions[positions[:,0] < -1]
-    right_arm = positions[positions[:,0] > 1]
+    return signals
 
-    return {
-        "spine": spine,
-        "head": head,
-        "left_arm": left_arm,
-        "right_arm": right_arm
-    }
+
+signals = extract_body_signals(org.cells)
 
 
 # -----------------------------
-# 2D VISUAL
+# DRIVE L01 SKELETON
 # -----------------------------
-st.subheader("2D Body Structure")
+def update_skeleton_from_cells(skeleton, signals):
+    if not signals:
+        return
 
-skeleton = build_simple_skeleton(org.cells)
+    scale = max(0.5, min(2.0, signals["height"] / 10))
+
+    # update geometry scale
+    skeleton.generate_current_geometry(scale)
+
+
+update_skeleton_from_cells(skeleton, signals)
+
+
+# -----------------------------
+# DRAW REAL SKELETON (2D)
+# -----------------------------
+st.subheader("L01 Skeleton (Driven by Cells)")
 
 fig, ax = plt.subplots()
 
-# --- Draw Spine ---
-if "spine" in skeleton and len(skeleton["spine"]) > 0:
-    spine = skeleton["spine"]
-    xs = [p[0] for p in spine]
-    ys = [p[1] for p in spine]
-    ax.plot(xs, ys, linewidth=3)
+for bone_id, bone in skeleton.registry.items():
+    p1 = bone.pos_proximal
+    p2 = bone.pos_distal
 
-# --- Draw Head ---
-if "head" in skeleton and len(skeleton["head"]) > 0:
-    h = skeleton["head"]
-    ax.scatter(h[:,0], h[:,1], s=10)
+    if p1 is None or p2 is None:
+        continue
 
-# --- Draw Arms ---
-if "left_arm" in skeleton and len(skeleton["left_arm"]) > 0:
-    la = skeleton["left_arm"]
-    ax.scatter(la[:,0], la[:,1], s=5)
+    xs = [p1[0], p2[0]]
+    ys = [p1[1], p2[1]]
 
-if "right_arm" in skeleton and len(skeleton["right_arm"]) > 0:
-    ra = skeleton["right_arm"]
-    ax.scatter(ra[:,0], ra[:,1], s=5)
+    ax.plot(xs, ys, linewidth=2)
 
-# --- Optional: show raw cells (faint background) ---
-show_cells = st.checkbox("Show Raw Cells", value=False)
 
-if show_cells:
+# Optional: overlay cells
+if st.checkbox("Show Cells", False):
     xs = [c.position[0] for c in org.cells]
     ys = [c.position[1] for c in org.cells]
     ax.scatter(xs, ys, s=2, alpha=0.2)
 
-# Layout
+
 ax.set_xlim(-20, 20)
 ax.set_ylim(-5, 30)
 
